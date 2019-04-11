@@ -1,6 +1,6 @@
+import drlse
 import scipy
 import numpy as np
-import drlse_edge4 as drlse
 import matplotlib.pyplot as plt
 import regularize_contour as reg
 import scipy.ndimage.morphology as snm
