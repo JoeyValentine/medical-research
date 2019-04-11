@@ -6,7 +6,6 @@ import regularize_contour as reg
 import scipy.ndimage.morphology as snm
 import skimage.morphology as sm
 
-
 result = np.load('contour_results_2.npy')
 
 cine_images = result[0]  # cine는 4차원영상
