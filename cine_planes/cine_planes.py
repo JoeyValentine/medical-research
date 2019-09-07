@@ -351,7 +351,7 @@ def get_intersection_points2D_with_img(intersection_points: list,
 
 
 def onclick(event: mpl.backend_bases.Event) -> None:
-    if event.button == mpl.backend_bases.MouseButton.LEFT:
+    if event.button == mpl.backend_bases.MouseButton.LEFT and event.inaxes is not None:
         axes_images_list = event.inaxes.get_images()
         renderer = event.inaxes.figure.canvas.get_renderer()
         new_img = axes_images_list[0].make_image(renderer, unsampled=True)
@@ -361,7 +361,7 @@ def onclick(event: mpl.backend_bases.Event) -> None:
         event.inaxes.imshow(rotated_img)
         event.inaxes.set_title(title)
         event.inaxes.figure.canvas.draw()
-    elif event.button == mpl.backend_bases.MouseButton.RIGHT:
+    elif event.button == mpl.backend_bases.MouseButton.RIGHT and event.inaxes is not None:
         axes_images_list = event.inaxes.get_images()
         renderer = event.inaxes.figure.canvas.get_renderer()
         new_img = axes_images_list[0].make_image(renderer, unsampled=True)
@@ -373,8 +373,12 @@ def onclick(event: mpl.backend_bases.Event) -> None:
         event.inaxes.figure.canvas.draw()
 
 
+def is_invertible(x: np.ndarray) -> bool:
+    return x.shape[0] == x.shape[1] and np.linalg.matrix_rank(x) == x.shape[0]
+
+
 def main() -> None:
-    N_PATIENT, N_PHASE = "DET0001501", 0
+    N_PATIENT, N_PHASE = "DET0000201", 0
     la_file_names_list, sa_file_names_list = get_file_names_lists(N_PATIENT, N_PHASE)
     la_file_names_list = sorted(la_file_names_list, key=sort_by_plane_number)
     sa_file_names_list = get_sorted_SA_plane_names(sa_file_names_list)
@@ -386,7 +390,7 @@ def main() -> None:
     sa_plotly_planes_list = get_plotly_planes_list(sa_file_names_list)
 
     for i, la_file_name in enumerate(la_file_names_list):
-        if i != 2:
+        if i != 0:
             continue
 
         la_plotly_planes_list = get_plotly_planes_list([la_file_name], 1)
@@ -413,17 +417,17 @@ def main() -> None:
                                                                                    sa_plane_range)
             sa_p1, sa_p2 = sa_intersection_points2D_with_img
 
-            la_intersection_points2D = get_intersection_points2D(intersection_points3D,
-                                                                 la_trans_mat2D, la_trans_constant)
-            la_intersection_points2D_with_img = get_intersection_points2D_with_img(la_intersection_points2D,
-                                                                                   la_plane_range)
-            la_p1, la_p2 = la_intersection_points2D_with_img
-
             original_la = la_plotly_planes_list[0].surfacecolor
-            original_la = ndimage.rotate(original_la,
-                                         -np.arctan2(la_p2[0] - la_p1[0], la_p2[1] - la_p1[1]) * 180.0 / np.pi,
-                                         reshape=False)
 
+            if is_invertible(la_trans_mat2D):
+                la_intersection_points2D = get_intersection_points2D(intersection_points3D,
+                                                                     la_trans_mat2D, la_trans_constant)
+                la_intersection_points2D_with_img = get_intersection_points2D_with_img(la_intersection_points2D,
+                                                                                       la_plane_range)
+                la_p1, la_p2 = la_intersection_points2D_with_img
+                original_la = ndimage.rotate(original_la,
+                                             -np.arctan2(la_p2[0] - la_p1[0], la_p2[1] - la_p1[1]) * 180.0 / np.pi,
+                                             reshape=False)
 
             estimated_la = get_est_la_plane_from_img_stack(sa_intersection_points2D_with_img,
                                                            interpolated_img_stack)
