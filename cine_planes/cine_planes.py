@@ -28,6 +28,7 @@ class RotatableAxes:
         self.title = self.axes.get_title()
         self.renderer = self.axes.figure.canvas.get_renderer()
         axes_images_list = self.axes.get_images()
+        # Suppose that there exists an image in the axes
         self.cur_image = axes_images_list[0].make_image(self.renderer, unsampled=True)[0]
         self.original_image = self.cur_image.copy()
         self.axes_angle_slider = self.fig.add_axes(rect_angle)
@@ -221,7 +222,7 @@ def get_update_menus(sa_plotly_planes_list: list, sa_file_names: list) -> list:
         return plane_buttons
 
     n_sa_planes = len(sa_plotly_planes_list)
-    updatemenus = list([
+    update_menus = list([
         dict(type="buttons",
              active=-1,
              buttons=list([
@@ -234,7 +235,7 @@ def get_update_menus(sa_plotly_planes_list: list, sa_file_names: list) -> list:
              ]) + get_plane_buttons()
              )
     ])
-    return updatemenus
+    return update_menus
 
 
 def plot_planes(planes_list: list, width: int = 1000, height: int = 1000,
@@ -247,8 +248,8 @@ def plot_planes(planes_list: list, width: int = 1000, height: int = 1000,
 def plot_planes_with_buttons(sa_plotly_planes_list: list, la_plotly_planes_list: list, sa_file_names: list,
                              width: int = 1000, height: int = 1000,
                              title: str = 'plotly', filename: str = None) -> None:
-    updatemenus = get_update_menus(sa_plotly_planes_list, sa_file_names)
-    layout = dict(width=width, height=height, title=title, updatemenus=updatemenus)
+    update_menus = get_update_menus(sa_plotly_planes_list, sa_file_names)
+    layout = dict(width=width, height=height, title=title, updatemenus=update_menus)
     fig = plotly.graph_objs.Figure(data=sa_plotly_planes_list + la_plotly_planes_list, layout=layout)
     if filename:
         plotly.offline.plot(fig, filename=filename, auto_open=False)
