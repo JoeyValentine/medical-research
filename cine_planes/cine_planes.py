@@ -8,6 +8,7 @@ import matplotlib as mpl
 
 mpl.use('Qt5Agg')
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider, Button
 import numpy as np
 import plotly
 import pydicom as dicom
@@ -17,6 +18,58 @@ import sympy
 from sympy import Point, Line, Segment, Plane, Point3D
 
 plotly.offline.init_notebook_mode(connected=True)
+
+
+class RotatableAxes:
+    def __init__(self, fig: mpl.figure.Figure, axes: mpl.axes.Axes,
+                 rect_angle: list, rect_reset: list):
+        self.fig = fig
+        self.axes = axes
+        self.title = self.axes.get_title()
+        self.renderer = self.axes.figure.canvas.get_renderer()
+        axes_images_list = self.axes.get_images()
+        self.cur_image = axes_images_list[0].make_image(self.renderer, unsampled=True)[0]
+        self.original_image = self.cur_image.copy()
+        self.axes_angle_slider = self.fig.add_axes(rect_angle)
+        self.axes_reset_button = self.fig.add_axes(rect_reset)
+        self.slider_angle = Slider(self.axes_angle_slider, 'Angle(Degree)', 0.0,
+                                   359.0, valinit=0.0, valstep=0.1)
+        self.slider_angle.on_changed(self.update_img)
+        self.reset_button = Button(self.axes_reset_button, 'Reset')
+        self.reset_button.on_clicked(self.reset)
+
+    def connect(self) -> None:
+        # connect to all the events we need
+        self.fig.canvas.mpl_connect('button_press_event', self.onclick)
+
+    def disconnect(self) -> None:
+        # disconnect all the stored connection ids
+        self.rect.figure.canvas.mpl_disconnect(self.onclick)
+
+    def onclick(self, event: mpl.backend_bases.Event) -> None:
+        if self.axes == event.inaxes:
+            if event.button == mpl.backend_bases.MouseButton.LEFT and event.inaxes is not None:
+                self.axes.clear()
+                self.cur_image = ndimage.rotate(self.cur_image, 90, reshape=False)
+                self.axes.imshow(self.cur_image)
+                self.axes.set_title(self.title)
+                self.axes.figure.canvas.draw()
+            elif event.button == mpl.backend_bases.MouseButton.RIGHT and event.inaxes is not None:
+                self.axes.clear()
+                self.cur_image = self.cur_image[:, ::-1]
+                self.axes.imshow(self.cur_image)
+                self.axes.set_title(self.title)
+                self.axes.figure.canvas.draw()
+
+    def update_img(self, new_angle: float) -> None:
+        self.axes.clear()
+        self.cur_image = ndimage.rotate(self.original_image, new_angle, reshape=False)
+        self.axes.imshow(self.cur_image)
+        self.axes.set_title(self.title)
+        self.axes.figure.canvas.draw()
+
+    def reset(self, event: mpl.backend_bases.Event):
+        self.slider_angle.reset()
 
 
 def get_plane(x: np.ndarray, y: np.ndarray, z: np.ndarray, surfacecolor: np.ndarray,
@@ -82,8 +135,6 @@ def sort_by_plane_number(path: pathlib.Path):
     return int((re.split(r'(\d+)', str(path)))[-4])
 
 
-# sa파일 번호 순서대로 촬영한것이 아니다...
-# 따로 위치별로 정렬을 해줘야 한다.
 def get_sorted_SA_plane_names(file_names_list: list) -> list:
     dcm_files = []
     for fname in file_names_list:
@@ -350,35 +401,12 @@ def get_intersection_points2D_with_img(intersection_points: list,
     return (float(result[0].x), float(result[0].y)), (float(result[1].x), float(result[1].y))
 
 
-def onclick(event: mpl.backend_bases.Event) -> None:
-    if event.button == mpl.backend_bases.MouseButton.LEFT and event.inaxes is not None:
-        axes_images_list = event.inaxes.get_images()
-        renderer = event.inaxes.figure.canvas.get_renderer()
-        new_img = axes_images_list[0].make_image(renderer, unsampled=True)
-        rotated_img = ndimage.rotate(new_img[0], 90.0, reshape=False)
-        title = event.inaxes.get_title()
-        event.inaxes.clear()
-        event.inaxes.imshow(rotated_img)
-        event.inaxes.set_title(title)
-        event.inaxes.figure.canvas.draw()
-    elif event.button == mpl.backend_bases.MouseButton.RIGHT and event.inaxes is not None:
-        axes_images_list = event.inaxes.get_images()
-        renderer = event.inaxes.figure.canvas.get_renderer()
-        new_img = axes_images_list[0].make_image(renderer, unsampled=True)
-        flipped_img = new_img[0][:, ::-1]
-        title = event.inaxes.get_title()
-        event.inaxes.clear()
-        event.inaxes.imshow(flipped_img)
-        event.inaxes.set_title(title)
-        event.inaxes.figure.canvas.draw()
-
-
 def is_invertible(x: np.ndarray) -> bool:
     return x.shape[0] == x.shape[1] and np.linalg.matrix_rank(x) == x.shape[0]
 
 
 def main() -> None:
-    N_PATIENT, N_PHASE = "DET0000201", 0
+    N_PATIENT, N_PHASE = "DET0001501", 0
     la_file_names_list, sa_file_names_list = get_file_names_lists(N_PATIENT, N_PHASE)
     la_file_names_list = sorted(la_file_names_list, key=sort_by_plane_number)
     sa_file_names_list = get_sorted_SA_plane_names(sa_file_names_list)
@@ -401,6 +429,9 @@ def main() -> None:
         la_plane_range = get_plane_xy_range(la_plotly_planes_list[0].surfacecolor)
 
         for j, sa_file_name in enumerate(sa_file_names_list):
+            if j != 0:
+                continue
+
             sa_num = int((re.split(r'(\d+)', str(sa_file_name)))[-4])
 
             intersection_line3D = get_intersection_line3D(sa_plotly_planes_list[j],
@@ -433,22 +464,24 @@ def main() -> None:
                                                            interpolated_img_stack)
             estimated_la = estimated_la[::-1]
 
-            fig, ax = plt.subplots(1, 3, tight_layout=True)
-            fig.canvas.mpl_connect('button_press_event', onclick)
+            fig, axes_list = plt.subplots(1, 3, tight_layout=True)
 
-            ax[0].imshow(original_la, cmap='gray')
-
-            ax[1].imshow(sa_plotly_planes_list[j].surfacecolor, cmap='gray')
-            ax[1].plot((sa_p1[0], sa_p2[0]), (sa_p1[1], sa_p2[1]), 'r--')
+            axes_list[0].imshow(original_la, cmap='gray')
+            axes_list[1].imshow(sa_plotly_planes_list[j].surfacecolor, cmap='gray')
+            axes_list[1].plot((sa_p1[0], sa_p2[0]), (sa_p1[1], sa_p2[1]), 'r--')
             xlim, ylim = sa_plane_range[:, 1], sa_plane_range[:, 0]
             ylim = ylim[::-1]
-            ax[1].set(xlim=xlim, ylim=ylim)
+            axes_list[1].set(xlim=xlim, ylim=ylim)
 
-            ax[2].imshow(estimated_la, cmap='gray')
+            axes_list[2].imshow(estimated_la, cmap='gray')
 
-            ax[0].title.set_text(f"{N_PATIENT}_original_la{str(i + 1)}_ph{str(N_PHASE)}")
-            ax[1].title.set_text(f"{N_PATIENT}_original_sa{sa_num}_ph{str(N_PHASE)}")
-            ax[2].title.set_text(f"estimated_la{str(i + 1)}_ph{str(N_PHASE)}")
+            axes_list[0].title.set_text(f"{N_PATIENT}_original_la{str(i + 1)}_ph{str(N_PHASE)}")
+            axes_list[1].title.set_text(f"{N_PATIENT}_original_sa{sa_num}_ph{str(N_PHASE)}")
+            axes_list[2].title.set_text(f"estimated_la{str(i + 1)}_ph{str(N_PHASE)}")
+
+            rot_axes = RotatableAxes(fig, axes_list[0],
+                                     [0.25, 0.1, 0.5, 0.03], [0.72, 0.05, 0.03, 0.03])
+            rot_axes.connect()
 
             fig_manager = plt.get_current_fig_manager()
             fig_manager.window.showMaximized()
