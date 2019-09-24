@@ -24,19 +24,18 @@ class RotatableAxes:
     def __init__(self, fig: mpl.figure.Figure, axes: mpl.axes.Axes,
                  rect_angle: list, rect_reset: list):
         self.fig = fig
-        self.axes = axes
-        self.title = self.axes.get_title()
-        self.renderer = self.axes.figure.canvas.get_renderer()
-        axes_images_list = self.axes.get_images()
         # Suppose that there exists an image in the axes
-        self.cur_image = axes_images_list[0].make_image(self.renderer, unsampled=True)[0]
-        self.original_image = self.cur_image.copy()
-        self.axes_angle_slider = self.fig.add_axes(rect_angle)
-        self.axes_reset_button = self.fig.add_axes(rect_reset)
-        self.slider_angle = Slider(self.axes_angle_slider, 'Angle(Degree)', 0.0,
+        self.axes = axes
+        self.renderer = self.axes.figure.canvas.get_renderer()
+        self.axes_img_instance = self.axes.get_images()[0]
+        self.original_axes_img = self.axes_img_instance.make_image(self.renderer, unsampled=True)[0]
+
+        self.axes_for_angle_slider = self.fig.add_axes(rect_angle)
+        self.axes_for_reset_button = self.fig.add_axes(rect_reset)
+        self.angle_slider = Slider(self.axes_for_angle_slider, 'Angle(Degree)', 0.0,
                                    359.0, valinit=0.0, valstep=0.1)
-        self.slider_angle.on_changed(self.update_img)
-        self.reset_button = Button(self.axes_reset_button, 'Reset')
+        self.angle_slider.on_changed(self.update_img)
+        self.reset_button = Button(self.axes_for_reset_button, 'Reset')
         self.reset_button.on_clicked(self.reset)
 
     def connect(self) -> None:
@@ -45,32 +44,142 @@ class RotatableAxes:
 
     def disconnect(self) -> None:
         # disconnect all the stored connection ids
-        self.rect.figure.canvas.mpl_disconnect(self.onclick)
+        self.fig.canvas.mpl_disconnect(self.onclick)
+
+    def update_la_img(self):
+        self.axes_img_instance = self.axes.get_images()[0]
+        self.original_axes_img = self.axes_img_instance.make_image(self.renderer, unsampled=True)[0]
+        self.angle_slider.reset()
 
     def onclick(self, event: mpl.backend_bases.Event) -> None:
         if self.axes == event.inaxes:
+            cur_img = self.axes_img_instance.make_image(self.renderer, unsampled=True)[0]
             if event.button == mpl.backend_bases.MouseButton.LEFT and event.inaxes is not None:
-                self.axes.clear()
-                self.cur_image = ndimage.rotate(self.cur_image, 90, reshape=False)
-                self.axes.imshow(self.cur_image)
-                self.axes.set_title(self.title)
-                self.axes.figure.canvas.draw()
+                rotated_image = ndimage.rotate(cur_img, 90.0, reshape=False)
+                self.axes_img_instance.set_data(rotated_image)
             elif event.button == mpl.backend_bases.MouseButton.RIGHT and event.inaxes is not None:
-                self.axes.clear()
-                self.cur_image = self.cur_image[:, ::-1]
-                self.axes.imshow(self.cur_image)
-                self.axes.set_title(self.title)
-                self.axes.figure.canvas.draw()
+                flipped_img = cur_img[:, ::-1]
+                self.axes_img_instance.set_data(flipped_img)
+            self.axes.figure.canvas.draw()
+            self.axes.figure.canvas.flush_events()
 
     def update_img(self, new_angle: float) -> None:
-        self.axes.clear()
-        self.cur_image = ndimage.rotate(self.original_image, new_angle, reshape=False)
-        self.axes.imshow(self.cur_image)
-        self.axes.set_title(self.title)
-        self.axes.figure.canvas.draw()
+        axes_images_list = self.axes.get_images()
+        rotated_img = ndimage.rotate(self.original_axes_img, new_angle, reshape=False)
+        axes_images_list[0].set_data(rotated_img)
+        self.axes.figure.canvas.update()
+        self.axes.figure.canvas.flush_events()
 
     def reset(self, event: mpl.backend_bases.Event):
-        self.slider_angle.reset()
+        self.angle_slider.reset()
+
+
+class FileSliderFig:
+    def __init__(self, la_img_list: list, sa_img_list: list,
+                 est_la_img_list: list, intersection_points_list: list,
+                 la_titles_list: list, sa_titles_list: list, est_la_titles_list: list,
+                 la_rect: list, sa_rect: list):
+        fig, axes_list = plt.subplots(1, 3, tight_layout=True)
+        self.fig = fig
+        self.la_axes = axes_list[0]
+        self.sa_axes = axes_list[1]
+        self.est_la_axes = axes_list[2]
+        self.la_img_list = la_img_list
+        self.sa_img_list = sa_img_list
+        self.est_la_img_list = est_la_img_list
+        self.intersection_points_list = intersection_points_list
+        self.la_titles_list = la_titles_list
+        self.sa_titles_list = sa_titles_list
+        self.est_la_titles_list = est_la_titles_list
+        self.n_la_images = len(self.la_img_list)
+        self.n_sa_images = len(self.sa_img_list)
+        self.axes_for_la_file_slider = self.fig.add_axes(la_rect)
+        self.axes_for_sa_file_slider = self.fig.add_axes(sa_rect)
+        self.la_file_slider = Slider(self.axes_for_la_file_slider, 'LA INDEX',
+                                     1.0, self.n_la_images, valinit=1.0, valstep=1.0)
+        self.sa_file_slider = Slider(self.axes_for_sa_file_slider, 'SA INDEX',
+                                     1.0, self.n_sa_images, valinit=1.0, valstep=1.0)
+        self.la_file_slider.on_changed(self.update_la_file)
+        self.sa_file_slider.on_changed(self.update_sa_file)
+        self.rot_axes = None
+
+    def imshow(self):
+        self.la_axes.imshow(self.la_img_list[0], cmap='gray')
+        self.sa_axes.imshow(self.sa_img_list[0], cmap='gray')
+        p1, p2 = self.intersection_points_list[0][0]
+        self.sa_axes.plot((p1[0], p2[0]), (p1[1], p2[1]), 'r--')
+
+        # update_axes_range(self.la_img_list[0], self.la_axes)
+        update_axes_range(self.sa_img_list[0], self.sa_axes)
+        # update_axes_range(self.est_la_img_list[0][0], self.est_la_axes)
+
+        self.est_la_axes.imshow(self.est_la_img_list[0][0], cmap='gray')
+        self.la_axes.title.set_text(self.la_titles_list[0])
+        self.sa_axes.title.set_text(self.sa_titles_list[0])
+        self.est_la_axes.title.set_text(self.est_la_titles_list[0])
+        self.rot_axes = RotatableAxes(self.fig, self.la_axes,
+                                 [0.25, 0.06, 0.5, 0.03], [0.72, 0.01, 0.03, 0.03])
+        self.rot_axes.connect()
+
+    def show(self):
+        self.fig.canvas.manager.window.showMaximized()
+        plt.show()
+
+    def update_la_file(self, new_la_slider_val: float) -> None:
+        new_la_idx = int(new_la_slider_val - 1.0)
+        cur_sa_idx = int(self.sa_file_slider.val - 1.0)
+
+        la_axes_images_list = self.la_axes.get_images()
+        la_axes_images_list[0].set_data(self.la_img_list[new_la_idx])
+        self.la_axes.set_title(self.la_titles_list[new_la_idx])
+        self.la_axes.figure.canvas.draw()
+        self.la_axes.figure.canvas.flush_events()
+        # update_axes_range(self.la_img_list[new_la_idx], self.la_axes)
+        self.rot_axes.update_la_img()
+
+        sa_axes_lines_list = self.sa_axes.get_lines()
+        p1, p2 = self.intersection_points_list[new_la_idx][cur_sa_idx]
+        sa_axes_lines_list[0].set_data((p1[0], p2[0]), (p1[1], p2[1]))
+        self.sa_axes.figure.canvas.draw()
+        self.sa_axes.figure.canvas.flush_events()
+
+        est_la_axes_images_list = self.est_la_axes.get_images()
+        est_la_axes_images_list[0].set_data(self.est_la_img_list[new_la_idx][cur_sa_idx])
+        self.est_la_axes.set_title(self.est_la_titles_list[new_la_idx])
+        self.est_la_axes.figure.canvas.draw()
+        self.est_la_axes.figure.canvas.flush_events()
+        # update_axes_range(self.est_la_img_list[new_la_idx][cur_sa_idx], self.est_la_axes)
+
+    def update_sa_file(self, new_sa_slider_val: float) -> None:
+        cur_la_idx = int(self.la_file_slider.val - 1.0)
+        new_sa_idx = int(new_sa_slider_val - 1.0)
+
+        sa_axes_images_list = self.sa_axes.get_images()
+        sa_axes_images_list[0].set_data(self.sa_img_list[new_sa_idx])
+        self.sa_axes.set_title(self.sa_titles_list[new_sa_idx])
+
+        sa_axes_lines_list = self.sa_axes.get_lines()
+        p1, p2 = self.intersection_points_list[cur_la_idx][new_sa_idx]
+        sa_axes_lines_list[0].set_data((p1[0], p2[0]), (p1[1], p2[1]))
+        sa_plane_range = get_plane_xy_range(self.sa_img_list[new_sa_idx])
+
+        xlim, ylim = sa_plane_range[:, 1], sa_plane_range[:, 0]
+        ylim = ylim[::-1]
+        self.sa_axes.set(xlim=xlim, ylim=ylim)
+        self.sa_axes.figure.canvas.draw()
+        self.sa_axes.figure.canvas.flush_events()
+
+        est_la_axes_images_list = self.est_la_axes.get_images()
+        est_la_axes_images_list[0].set_data(self.est_la_img_list[cur_la_idx][new_sa_idx])
+        self.est_la_axes.figure.canvas.draw()
+        self.est_la_axes.figure.canvas.flush_events()
+
+
+def update_axes_range(img, axes):
+    img_range = get_plane_xy_range(img)
+    xlim, ylim = img_range[:, 1], img_range[:, 0]
+    ylim = ylim[::-1]
+    axes.set(xlim=xlim, ylim=ylim)
 
 
 def get_plane(x: np.ndarray, y: np.ndarray, z: np.ndarray, surfacecolor: np.ndarray,
@@ -268,7 +377,7 @@ def get_file_names_lists(patient_number: str, phase_number: int) -> tuple:
     return la_file_names_list, sa_file_names_list
 
 
-def get_est_la_plane_from_img_stack(points: list, interpolated_img_stack: np.ndarray) -> tuple:
+def get_est_la_plane_from_img_stack(points: list, interpolated_img_stack: np.ndarray) -> np.ndarray:
     assert (points[0] != points[1])
 
     def get_t_val_from_x(x_: np.ndarray) -> np.ndarray:
@@ -407,7 +516,7 @@ def is_invertible(x: np.ndarray) -> bool:
 
 
 def main() -> None:
-    N_PATIENT, N_PHASE = "DET0001501", 0
+    N_PATIENT, N_PHASE = "DET0000101", 0
     la_file_names_list, sa_file_names_list = get_file_names_lists(N_PATIENT, N_PHASE)
     la_file_names_list = sorted(la_file_names_list, key=sort_by_plane_number)
     sa_file_names_list = get_sorted_SA_plane_names(sa_file_names_list)
@@ -418,10 +527,17 @@ def main() -> None:
     interpolated_img_stack = get_interpolated_img_stack(sa_file_names_list)
     sa_plotly_planes_list = get_plotly_planes_list(sa_file_names_list)
 
-    for i, la_file_name in enumerate(la_file_names_list):
-        if i != 0:
-            continue
+    la_img_list = []
+    sa_img_list = [sa_plotly_planes_list[i].surfacecolor for i in range(N_SA_PLANES)]
+    estimated_la_img_list = []
+    intersection_points_list = []
 
+    la_titles_list = [f"{N_PATIENT}_original_la{str(i + 1)}_ph{str(N_PHASE)}" for i in range(N_LA_PLANES)]
+    sa_num_list = [int((re.split(r'(\d+)', str(sa_file_names_list[i])))[-4]) for i in range(N_SA_PLANES)]
+    sa_titles_list = [f"{N_PATIENT}_original_sa{sa_num}_ph{str(N_PHASE)}" for sa_num in sa_num_list]
+    est_la_titles_list = [f"estimated_la{str(i + 1)}_ph{str(N_PHASE)}" for i in range(N_LA_PLANES)]
+
+    for i, la_file_name in enumerate(la_file_names_list):
         la_plotly_planes_list = get_plotly_planes_list([la_file_name], 1)
 
         la_dicom_file = get_dicom_file(la_file_name)
@@ -429,12 +545,10 @@ def main() -> None:
         la_trans_constant = get_trans_constant(la_dicom_file)
         la_plane_range = get_plane_xy_range(la_plotly_planes_list[0].surfacecolor)
 
+        estimated_la_img_list.append([])
+        intersection_points_list.append([])
+
         for j, sa_file_name in enumerate(sa_file_names_list):
-            if j != 0:
-                continue
-
-            sa_num = int((re.split(r'(\d+)', str(sa_file_name)))[-4])
-
             intersection_line3D = get_intersection_line3D(sa_plotly_planes_list[j],
                                                           la_plotly_planes_list[0])
             intersection_points3D = intersection_line3D[0].points
@@ -448,44 +562,25 @@ def main() -> None:
             sa_intersection_points2D_with_img = get_intersection_points2D_with_img(sa_intersection_points2D,
                                                                                    sa_plane_range)
             sa_p1, sa_p2 = sa_intersection_points2D_with_img
+            intersection_points_list[i].append([sa_p1, sa_p2])
 
-            original_la = la_plotly_planes_list[0].surfacecolor
-
-            if is_invertible(la_trans_mat2D):
-                la_intersection_points2D = get_intersection_points2D(intersection_points3D,
-                                                                     la_trans_mat2D, la_trans_constant)
-                la_intersection_points2D_with_img = get_intersection_points2D_with_img(la_intersection_points2D,
-                                                                                       la_plane_range)
-                la_p1, la_p2 = la_intersection_points2D_with_img
-                original_la = ndimage.rotate(original_la,
-                                             -np.arctan2(la_p2[0] - la_p1[0], la_p2[1] - la_p1[1]) * 180.0 / np.pi,
-                                             reshape=False)
+            if j == 0:
+                la_img = la_plotly_planes_list[0].surfacecolor
+                if is_invertible(la_trans_mat2D):
+                    la_intersection_points2D = get_intersection_points2D(intersection_points3D,
+                                                                         la_trans_mat2D, la_trans_constant)
+                    la_intersection_points2D_with_img = get_intersection_points2D_with_img(la_intersection_points2D,
+                                                                                           la_plane_range)
+                    la_p1, la_p2 = la_intersection_points2D_with_img
+                    la_img = ndimage.rotate(la_img,
+                                            -np.arctan2(la_p2[0] - la_p1[0], la_p2[1] - la_p1[1]) * 180.0 / np.pi,
+                                            reshape=False)
+                la_img_list.append(la_img)
 
             estimated_la = get_est_la_plane_from_img_stack(sa_intersection_points2D_with_img,
                                                            interpolated_img_stack)
             estimated_la = estimated_la[::-1]
-
-            fig, axes_list = plt.subplots(1, 3, tight_layout=True)
-
-            axes_list[0].imshow(original_la, cmap='gray')
-            axes_list[1].imshow(sa_plotly_planes_list[j].surfacecolor, cmap='gray')
-            axes_list[1].plot((sa_p1[0], sa_p2[0]), (sa_p1[1], sa_p2[1]), 'r--')
-            xlim, ylim = sa_plane_range[:, 1], sa_plane_range[:, 0]
-            ylim = ylim[::-1]
-            axes_list[1].set(xlim=xlim, ylim=ylim)
-
-            axes_list[2].imshow(estimated_la, cmap='gray')
-
-            axes_list[0].title.set_text(f"{N_PATIENT}_original_la{str(i + 1)}_ph{str(N_PHASE)}")
-            axes_list[1].title.set_text(f"{N_PATIENT}_original_sa{sa_num}_ph{str(N_PHASE)}")
-            axes_list[2].title.set_text(f"estimated_la{str(i + 1)}_ph{str(N_PHASE)}")
-
-            rot_axes = RotatableAxes(fig, axes_list[0],
-                                     [0.25, 0.1, 0.5, 0.03], [0.72, 0.05, 0.03, 0.03])
-            rot_axes.connect()
-
-            fig_manager = plt.get_current_fig_manager()
-            fig_manager.window.showMaximized()
+            estimated_la_img_list[i].append(estimated_la)
 
         html_file_path = pathlib.Path(f"{str(la_file_name.name).split('.')[0]}.html")
         if not html_file_path.exists():
@@ -496,8 +591,13 @@ def main() -> None:
             print(f"{str(html_file_path)} created")
         webbrowser.open_new(str(html_file_path))
 
-    plt.show()
+    file_slider_fig = FileSliderFig(la_img_list, sa_img_list, estimated_la_img_list, intersection_points_list,
+                                    la_titles_list, sa_titles_list, est_la_titles_list,
+                                    [0.25, 0.95, 0.5, 0.03], [0.25, 0.905, 0.5, 0.03])
+    file_slider_fig.imshow()
+    file_slider_fig.show()
 
 
 if __name__ == "__main__":
     main()
+
