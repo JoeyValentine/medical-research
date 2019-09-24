@@ -109,9 +109,7 @@ class FileSliderFig:
         p1, p2 = self.intersection_points_list[0][0]
         self.sa_axes.plot((p1[0], p2[0]), (p1[1], p2[1]), 'r--')
 
-        # update_axes_range(self.la_img_list[0], self.la_axes)
         update_axes_range(self.sa_img_list[0], self.sa_axes)
-        # update_axes_range(self.est_la_img_list[0][0], self.est_la_axes)
 
         self.est_la_axes.imshow(self.est_la_img_list[0][0], cmap='gray')
         self.la_axes.title.set_text(self.la_titles_list[0])
@@ -134,7 +132,6 @@ class FileSliderFig:
         self.la_axes.set_title(self.la_titles_list[new_la_idx])
         self.la_axes.figure.canvas.draw()
         self.la_axes.figure.canvas.flush_events()
-        # update_axes_range(self.la_img_list[new_la_idx], self.la_axes)
         self.rot_axes.update_la_img()
 
         sa_axes_lines_list = self.sa_axes.get_lines()
@@ -148,7 +145,6 @@ class FileSliderFig:
         self.est_la_axes.set_title(self.est_la_titles_list[new_la_idx])
         self.est_la_axes.figure.canvas.draw()
         self.est_la_axes.figure.canvas.flush_events()
-        # update_axes_range(self.est_la_img_list[new_la_idx][cur_sa_idx], self.est_la_axes)
 
     def update_sa_file(self, new_sa_slider_val: float) -> None:
         cur_la_idx = int(self.la_file_slider.val - 1.0)
